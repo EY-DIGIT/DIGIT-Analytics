@@ -294,7 +294,7 @@ public class InboxServiceV2 {
         return statusCountResponse.get(0);
     }
 
-   private List<Inbox> parseInboxItemsFromSearchResponse(Object result, List<BusinessService> businessServices) {
+ private List<Inbox> parseInboxItemsFromSearchResponse(Object result, List<BusinessService> businessServices) {
     if (result == null) return new ArrayList<>();
 
     Map<String, Object> hitsMap = (Map<String, Object>) ((Map<String, Object>) result).get(HITS);
@@ -304,61 +304,39 @@ public class InboxServiceV2 {
 
     List<Map<String, Object>> nestedHits = (List<Map<String, Object>>) hitsMap.get(HITS);
 
-    Map<String, Long> businessServiceSlaMap = new HashMap<>();
-    Map<String, Long> stateUuidVsSlaMap = new HashMap<>();
+    // Use LinkedHashMap to preserve order
+    Map<String, Inbox> propertyIdToInbox = new LinkedHashMap<>();
 
-    businessServices.forEach(businessService -> {
-        businessServiceSlaMap.put(businessService.getBusinessService(), businessService.getBusinessServiceSla());
-        if (!CollectionUtils.isEmpty(businessService.getStates())) {
-            businessService.getStates().forEach(state -> {
-                if (!ObjectUtils.isEmpty(state.getSla())) {
-                    stateUuidVsSlaMap.put(state.getUuid(), state.getSla());
-                }
-            });
-        }
-    });
-
-    List<Inbox> inboxItemList = new ArrayList<>();
-
-    nestedHits.forEach(hit -> {
-        Inbox inbox = new Inbox();
+    for (Map<String, Object> hit : nestedHits) {
         Map<String, Object> sourceMap = (Map<String, Object>) hit.get(SOURCE_KEY);
-        if (sourceMap == null) {
-            inboxItemList.add(inbox); // empty inbox object if source missing
-            return;
-        }
-
         Map<String, Object> businessObject = (Map<String, Object>) sourceMap.get(DATA_KEY);
-        if (businessObject == null) businessObject = new HashMap<>();
-        inbox.setBusinessObject(businessObject);
+        if (businessObject == null) continue;
 
-        // Calculate SLA safely
-        try {
-            Long serviceSla = getApplicationServiceSla(businessServiceSlaMap, stateUuidVsSlaMap, inbox.getBusinessObject());
-            inbox.getBusinessObject().put(SERVICESLA_KEY, serviceSla);
-        } catch (Exception e) {
-            log.warn("Error calculating SLA for inbox item: {}", inbox.getBusinessObject(), e);
-            inbox.getBusinessObject().put(SERVICESLA_KEY, null);
+        // Safely fetch propertyId, fallback to some unique key if null
+        String propertyId = (String) businessObject.get("propertyId");
+        if (propertyId == null || propertyId.isEmpty()) {
+            propertyId = UUID.randomUUID().toString(); // ensures unique key
         }
 
-        // Enrich current process instance safely
-        if (businessObject.containsKey(CURRENT_PROCESS_INSTANCE_CONSTANT)) {
-            try {
-                ProcessInstance processInstance = mapper.convertValue(
-                        businessObject.get(CURRENT_PROCESS_INSTANCE_CONSTANT), ProcessInstance.class);
-                inbox.setProcessInstance(processInstance);
-            } catch (Exception e) {
-                log.warn("Error mapping process instance for inbox item: {}", businessObject, e);
-            } finally {
-                businessObject.remove(CURRENT_PROCESS_INSTANCE_CONSTANT); // remove to avoid redundant data
+        // Only keep first/latest per propertyId
+        if (!propertyIdToInbox.containsKey(propertyId)) {
+            Inbox inbox = new Inbox();
+            inbox.setBusinessObject(businessObject);
+
+            // Enrich process instance
+            if (businessObject.containsKey(CURRENT_PROCESS_INSTANCE_CONSTANT)) {
+                ProcessInstance pi = mapper.convertValue(businessObject.get(CURRENT_PROCESS_INSTANCE_CONSTANT), ProcessInstance.class);
+                inbox.setProcessInstance(pi);
+                businessObject.remove(CURRENT_PROCESS_INSTANCE_CONSTANT);
             }
+
+            propertyIdToInbox.put(propertyId, inbox);
         }
+    }
 
-        inboxItemList.add(inbox);
-    });
-
-    return inboxItemList;
+    return new ArrayList<>(propertyIdToInbox.values());
 }
+
 
 
     public Integer getApplicationsNearingSlaCount(InboxRequest inboxRequest, String indexName) {
