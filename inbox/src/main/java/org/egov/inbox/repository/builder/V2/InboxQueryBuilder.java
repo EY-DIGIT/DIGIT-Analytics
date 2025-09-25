@@ -77,7 +77,12 @@ public class InboxQueryBuilder implements QueryBuilderInterface {
 
         addModuleSearchCriteriaToBaseQuery(params, nameToPathMap, nameToOperator, mustClauseList);
         addProcessSearchCriteriaToBaseQuery(inboxRequest.getInbox().getProcessSearchCriteria(), nameToPathMap, nameToOperator, mustClauseList);
+        baseEsQuery.put("sort", List.of(
+        	    Map.of("Data.auditDetails.lastModifiedTime", Map.of("order", "desc"))
+        	));
 
+        	// Collapse to get only 1 latest doc per property
+        	baseEsQuery.put("collapse", Map.of("field", "Data.propertyId.keyword"));
         innerBoolClause.put(MUST_KEY, mustClauseList);
 
         return baseEsQuery;
