@@ -100,21 +100,31 @@ public class InboxServiceV2 {
     }
 
     private void enrichProcessInstanceInInboxItems(List<Inbox> items) {
-        /*
-          As part of the new inbox, having currentProcessInstance as part of the index is mandated. This has been
-          done to avoid having redundant network calls which could hog the performance.
-        */
-        items.forEach(item -> {
-            if(item.getBusinessObject().containsKey(CURRENT_PROCESS_INSTANCE_CONSTANT)) {
-                // Set process instance object in the native process instance field declared in the model inbox class.
-                ProcessInstance processInstance = mapper.convertValue(item.getBusinessObject().get(CURRENT_PROCESS_INSTANCE_CONSTANT), ProcessInstance.class);
-                item.setProcessInstance(processInstance);
+        Iterator<Inbox> iterator = items.iterator();
+        while (iterator.hasNext()) {
+            Inbox item = iterator.next();
+            if (item.getBusinessObject().containsKey(CURRENT_PROCESS_INSTANCE_CONSTANT)) {
+                ProcessInstance processInstance = mapper.convertValue(
+                    item.getBusinessObject().get(CURRENT_PROCESS_INSTANCE_CONSTANT), 
+                    ProcessInstance.class
+                );
 
-                // Remove current process instance from business object in order to avoid having redundant data in response.
+                if (processInstance != null) {
+                    item.setProcessInstance(processInstance);
+                } else {
+                    // Remove the item entirely if processInstance is null
+                    iterator.remove();
+                    continue;
+                }
+
                 item.getBusinessObject().remove(CURRENT_PROCESS_INSTANCE_CONSTANT);
+            } else {
+                // Remove items that don't even have the processInstance field
+                iterator.remove();
             }
-        });
+        }
     }
+
 
     private List<Inbox> getInboxItems(InboxRequest inboxRequest, String indexName){
         List<BusinessService> businessServices = workflowService.getBusinessServices(inboxRequest);
