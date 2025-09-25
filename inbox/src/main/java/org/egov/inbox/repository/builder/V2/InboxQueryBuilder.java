@@ -307,7 +307,7 @@ public class InboxQueryBuilder implements QueryBuilderInterface {
         // Prepare base ES query
         if(isPaginationRequired) {
             baseEsQuery.put("from", inboxRequest.getInbox().getOffset());
-            baseEsQuery.put("size", inboxRequest.getInbox().getLimit());
+            baseEsQuery.put("size", 20);
         }
         baseEsQuery.put("query", boolQuery);
 
