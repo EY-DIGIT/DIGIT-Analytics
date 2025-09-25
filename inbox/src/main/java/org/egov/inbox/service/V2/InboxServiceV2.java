@@ -100,28 +100,22 @@ public class InboxServiceV2 {
     }
 
     private void enrichProcessInstanceInInboxItems(List<Inbox> items) {
-        Iterator<Inbox> iterator = items.iterator();
-        while (iterator.hasNext()) {
-            Inbox item = iterator.next();
-            if (item.getBusinessObject().containsKey(CURRENT_PROCESS_INSTANCE_CONSTANT)) {
-                ProcessInstance processInstance = mapper.convertValue(
-                    item.getBusinessObject().get(CURRENT_PROCESS_INSTANCE_CONSTANT), 
-                    ProcessInstance.class
-                );
-
-                if (processInstance != null) {
+        /*
+          As part of the new inbox, having currentProcessInstance as part of the index is mandated. This has been
+          done to avoid having redundant network calls which could hog the performance.
+        */
+        if(items != null) {
+            log.info("Enriching process instances for {} inbox items", items.size());
+            items.forEach(item -> {
+                if(item.getBusinessObject() != null && item.getBusinessObject().containsKey(CURRENT_PROCESS_INSTANCE_CONSTANT)) {
+                    // Set process instance object in the native process instance field declared in the model inbox class.
+                    ProcessInstance processInstance = mapper.convertValue(item.getBusinessObject().get(CURRENT_PROCESS_INSTANCE_CONSTANT), ProcessInstance.class);
                     item.setProcessInstance(processInstance);
-                } else {
-                    // Remove the item entirely if processInstance is null
-                    iterator.remove();
-                    continue;
-                }
 
-                item.getBusinessObject().remove(CURRENT_PROCESS_INSTANCE_CONSTANT);
-            } else {
-                // Remove items that don't even have the processInstance field
-                iterator.remove();
-            }
+                    // Remove current process instance from business object in order to avoid having redundant data in response.
+                    item.getBusinessObject().remove(CURRENT_PROCESS_INSTANCE_CONSTANT);
+                }
+            });
         }
     }
 
@@ -196,28 +190,64 @@ public class InboxServiceV2 {
         return transformedStatusMap;
     }
 
-    private Long getApplicationServiceSla(Map<String, Long> businessServiceSlaMap, Map<String, Long> stateUuidSlaMap, Object data) {
+   private Long getApplicationServiceSla(Map<String, Long> businessServiceSlaMap,
+                                      Map<String, Long> stateUuidSlaMap,
+                                      Object data) {
 
-        Long currentDate = System.currentTimeMillis(); //current time
-        Map<String, Object> auditDetails = (Map<String, Object>) ((Map<String, Object>) data).get(AUDIT_DETAILS_KEY);
-        String stateUuid = JsonPath.read(data, STATE_UUID_PATH);
-        if(stateUuidSlaMap.containsKey(stateUuid)){
-            if (!ObjectUtils.isEmpty(auditDetails.get(LAST_MODIFIED_TIME_KEY))) {
-                Long lastModifiedTime = ((Number) auditDetails.get(LAST_MODIFIED_TIME_KEY)).longValue();
-
-                return Long.valueOf(Math.round((stateUuidSlaMap.get(stateUuid) - (currentDate - lastModifiedTime)) / ((double) (24 * 60 * 60 * 1000))));
-            }
-        }else {
-            if (!ObjectUtils.isEmpty(auditDetails.get(CREATED_TIME_KEY))) {
-                Long createdTime = ((Number) auditDetails.get(CREATED_TIME_KEY)).longValue();
-                String businessService = JsonPath.read(data, BUSINESS_SERVICE_PATH);
-                Long businessServiceSLA = businessServiceSlaMap.get(businessService);
-
-                return Long.valueOf(Math.round((businessServiceSLA - (currentDate - createdTime)) / ((double) (24 * 60 * 60 * 1000))));
-            }
-        }
+    if (data == null) {
+        log.warn("Data object is null while calculating SLA");
         return null;
     }
+
+    Long currentDate = System.currentTimeMillis(); // current time
+    Map<String, Object> auditDetails = (Map<String, Object>) ((Map<String, Object>) data).get(AUDIT_DETAILS_KEY);
+    if (auditDetails == null) {
+        log.warn("Audit details are null for data: {}", data);
+        return null;
+    }
+
+    String stateUuid = null;
+    String businessService = null;
+
+    // Safely read stateUuid
+    try {
+        stateUuid = JsonPath.read(data, STATE_UUID_PATH);
+    } catch (com.jayway.jsonpath.PathNotFoundException e) {
+        log.warn("State UUID not found in data: {}", data);
+    }
+
+    // Safely read businessService
+    try {
+        businessService = JsonPath.read(data, BUSINESS_SERVICE_PATH);
+    } catch (com.jayway.jsonpath.PathNotFoundException e) {
+        log.warn("Business Service not found in data: {}", data);
+    }
+
+    // SLA based on stateUuid
+    if (stateUuid != null && stateUuidSlaMap.containsKey(stateUuid)) {
+        if (!ObjectUtils.isEmpty(auditDetails.get(LAST_MODIFIED_TIME_KEY))) {
+            Long lastModifiedTime = ((Number) auditDetails.get(LAST_MODIFIED_TIME_KEY)).longValue();
+            Long slaDays = Math.round((stateUuidSlaMap.get(stateUuid) - (currentDate - lastModifiedTime)) / ((double) (24 * 60 * 60 * 1000)));
+            log.info("SLA calculated based on state UUID {}: {} days remaining", stateUuid, slaDays);
+            return slaDays;
+        }
+    }
+
+    // SLA based on businessService
+    if (businessService != null && businessServiceSlaMap.containsKey(businessService)) {
+        if (!ObjectUtils.isEmpty(auditDetails.get(CREATED_TIME_KEY))) {
+            Long createdTime = ((Number) auditDetails.get(CREATED_TIME_KEY)).longValue();
+            Long businessServiceSLA = businessServiceSlaMap.get(businessService);
+            Long slaDays = Math.round((businessServiceSLA - (currentDate - createdTime)) / ((double) (24 * 60 * 60 * 1000)));
+            log.info("SLA calculated based on business service {}: {} days remaining", businessService, slaDays);
+            return slaDays;
+        }
+    }
+
+    log.warn("SLA could not be calculated for data: {}", data);
+    return null;
+}
+
 
     private List<HashMap<String,Object>> transformStatusMap(InboxRequest request,HashMap<String, Object> statusCountMap) {
 
@@ -263,34 +293,72 @@ public class InboxServiceV2 {
         return statusCountResponse.get(0);
     }
 
-    private List<Inbox> parseInboxItemsFromSearchResponse(Object result, List<BusinessService> businessServices) {
-        Map<String, Object> hits = (Map<String, Object>)((Map<String, Object>) result).get(HITS);
-        List<Map<String, Object>> nestedHits = (List<Map<String, Object>>) hits.get(HITS);
-        if(CollectionUtils.isEmpty(nestedHits)){
-            return new ArrayList<>();
+   private List<Inbox> parseInboxItemsFromSearchResponse(Object result, List<BusinessService> businessServices) {
+    if (result == null) return new ArrayList<>();
+
+    Map<String, Object> hitsMap = (Map<String, Object>) ((Map<String, Object>) result).get(HITS);
+    if (hitsMap == null || CollectionUtils.isEmpty((List<?>) hitsMap.get(HITS))) {
+        return new ArrayList<>();
+    }
+
+    List<Map<String, Object>> nestedHits = (List<Map<String, Object>>) hitsMap.get(HITS);
+
+    Map<String, Long> businessServiceSlaMap = new HashMap<>();
+    Map<String, Long> stateUuidVsSlaMap = new HashMap<>();
+
+    businessServices.forEach(businessService -> {
+        businessServiceSlaMap.put(businessService.getBusinessService(), businessService.getBusinessServiceSla());
+        if (!CollectionUtils.isEmpty(businessService.getStates())) {
+            businessService.getStates().forEach(state -> {
+                if (!ObjectUtils.isEmpty(state.getSla())) {
+                    stateUuidVsSlaMap.put(state.getUuid(), state.getSla());
+                }
+            });
+        }
+    });
+
+    List<Inbox> inboxItemList = new ArrayList<>();
+
+    nestedHits.forEach(hit -> {
+        Inbox inbox = new Inbox();
+        Map<String, Object> sourceMap = (Map<String, Object>) hit.get(SOURCE_KEY);
+        if (sourceMap == null) {
+            inboxItemList.add(inbox); // empty inbox object if source missing
+            return;
         }
 
-        Map<String, Long> businessServiceSlaMap = new HashMap<>();
-        Map<String, Long> stateUuidVsSlaMap = new HashMap<>();
+        Map<String, Object> businessObject = (Map<String, Object>) sourceMap.get(DATA_KEY);
+        if (businessObject == null) businessObject = new HashMap<>();
+        inbox.setBusinessObject(businessObject);
 
-        businessServices.forEach(businessService -> {
-            businessServiceSlaMap.put(businessService.getBusinessService(),businessService.getBusinessServiceSla());
-            businessService.getStates().forEach(state -> {
-                if(!ObjectUtils.isEmpty(state.getSla()))
-                    stateUuidVsSlaMap.put(state.getUuid(), state.getSla());
-            });
-        });
+        // Calculate SLA safely
+        try {
+            Long serviceSla = getApplicationServiceSla(businessServiceSlaMap, stateUuidVsSlaMap, inbox.getBusinessObject());
+            inbox.getBusinessObject().put(SERVICESLA_KEY, serviceSla);
+        } catch (Exception e) {
+            log.warn("Error calculating SLA for inbox item: {}", inbox.getBusinessObject(), e);
+            inbox.getBusinessObject().put(SERVICESLA_KEY, null);
+        }
 
-        List<Inbox> inboxItemList = new ArrayList<>();
-        nestedHits.forEach(hit ->{
-            Inbox inbox = new Inbox();
-            Map<String, Object> businessObject = (Map<String, Object>) hit.get(SOURCE_KEY);
-            inbox.setBusinessObject((Map<String, Object>)businessObject.get(DATA_KEY));
-            Long serviceSla = getApplicationServiceSla(businessServiceSlaMap, stateUuidVsSlaMap, inbox.getBusinessObject());            inbox.getBusinessObject().put(SERVICESLA_KEY, serviceSla);
-            inboxItemList.add(inbox);
-        });
-        return inboxItemList;
-    }
+        // Enrich current process instance safely
+        if (businessObject.containsKey(CURRENT_PROCESS_INSTANCE_CONSTANT)) {
+            try {
+                ProcessInstance processInstance = mapper.convertValue(
+                        businessObject.get(CURRENT_PROCESS_INSTANCE_CONSTANT), ProcessInstance.class);
+                inbox.setProcessInstance(processInstance);
+            } catch (Exception e) {
+                log.warn("Error mapping process instance for inbox item: {}", businessObject, e);
+            } finally {
+                businessObject.remove(CURRENT_PROCESS_INSTANCE_CONSTANT); // remove to avoid redundant data
+            }
+        }
+
+        inboxItemList.add(inbox);
+    });
+
+    return inboxItemList;
+}
+
 
     public Integer getApplicationsNearingSlaCount(InboxRequest inboxRequest, String indexName) {
         List<BusinessService> businessServicesObjs = workflowService.getBusinessServices(inboxRequest);
