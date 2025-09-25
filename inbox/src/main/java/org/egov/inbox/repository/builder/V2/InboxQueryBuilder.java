@@ -147,18 +147,18 @@ public class InboxQueryBuilder implements QueryBuilderInterface {
             }
         }
 
-        if(!ObjectUtils.isEmpty(processSearchCriteria.getStatus())){
-            String key = "status";
-            Map<String, Object> mustClauseChild = null;
-            Map<String, Object> params = new HashMap<>();
-            params.put(key, processSearchCriteria.getStatus());
-            mustClauseChild = (Map<String, Object>) prepareMustClauseChild(params, key, nameToPathMap, nameToOperator);
-            if(CollectionUtils.isEmpty(mustClauseChild)){
-                log.info("Error occurred while preparing filter for must clause. Filter for key " + key + " will not be added.");
-            }else {
-                mustClauseList.add(mustClauseChild);
-            }
-        }
+//        if(!ObjectUtils.isEmpty(processSearchCriteria.getStatus())){
+//            String key = "status";
+//            Map<String, Object> mustClauseChild = null;
+//            Map<String, Object> params = new HashMap<>();
+//            params.put(key, processSearchCriteria.getStatus());
+//            mustClauseChild = (Map<String, Object>) prepareMustClauseChild(params, key, nameToPathMap, nameToOperator);
+//            if(CollectionUtils.isEmpty(mustClauseChild)){
+//                log.info("Error occurred while preparing filter for must clause. Filter for key " + key + " will not be added.");
+//            }else {
+//                mustClauseList.add(mustClauseChild);
+//            }
+//        }
 
         if(!ObjectUtils.isEmpty(processSearchCriteria.getAssignee())){
             String key = "assignee";
