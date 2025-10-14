@@ -1,4 +1,5 @@
-FROM maven:3.9.6-amazoncorretto-17 AS build
+# FROM maven:3.9.6-amazoncorretto-17 AS build
+FROM manish050994/maven:3.9.6-amazoncorretto-17 AS build
 ARG WORK_DIR
 WORKDIR /app
 
