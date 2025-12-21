@@ -62,22 +62,6 @@ public class InboxQueryBuilder implements QueryBuilderInterface {
             // Adds source filter only when requesting for inbox items.
             List<String> sourceFilterPathList = configuration.getSourceFilterPathList();
             addSourceFilterToBaseQuery(baseEsQuery, sourceFilterPathList);
-
-//            // ✅ Add collapse only here (for search queries, not count)
-//            Map<String, Object> innerHits = new HashMap<>();
-//            innerHits.put("name", "latest_doc");
-//            innerHits.put("size", 1);
-//            List<Map<String, Object>> innerSort = new ArrayList<>();
-//            Map<String, Object> sortMap = new HashMap<>();
-//            sortMap.put("Data.auditDetails.lastModifiedTime", Map.of("order", "desc"));
-//            innerSort.add(sortMap);
-//            innerHits.put("sort", innerSort);
-//
-//            Map<String, Object> collapseClause = new HashMap<>();
-//            collapseClause.put("field", "Data.propertyId.keyword");
-//            collapseClause.put("inner_hits", innerHits);
-
-    //        baseEsQuery.put("collapse", collapseClause);
         }
 
         Map<String, Object> innerBoolClause = (HashMap<String, Object>) ((HashMap<String, Object>) baseEsQuery.get(QUERY_KEY)).get(BOOL_KEY);
@@ -163,18 +147,18 @@ public class InboxQueryBuilder implements QueryBuilderInterface {
             }
         }
 
-//        if(!ObjectUtils.isEmpty(processSearchCriteria.getStatus())){
-//            String key = "status";
-//            Map<String, Object> mustClauseChild = null;
-//            Map<String, Object> params = new HashMap<>();
-//            params.put(key, processSearchCriteria.getStatus());
-//            mustClauseChild = (Map<String, Object>) prepareMustClauseChild(params, key, nameToPathMap, nameToOperator);
-//            if(CollectionUtils.isEmpty(mustClauseChild)){
-//                log.info("Error occurred while preparing filter for must clause. Filter for key " + key + " will not be added.");
-//            }else {
-//                mustClauseList.add(mustClauseChild);
-//            }
-//        }
+        if(!ObjectUtils.isEmpty(processSearchCriteria.getStatus())){
+            String key = "status";
+            Map<String, Object> mustClauseChild = null;
+            Map<String, Object> params = new HashMap<>();
+            params.put(key, processSearchCriteria.getStatus());
+            mustClauseChild = (Map<String, Object>) prepareMustClauseChild(params, key, nameToPathMap, nameToOperator);
+            if(CollectionUtils.isEmpty(mustClauseChild)){
+                log.info("Error occurred while preparing filter for must clause. Filter for key " + key + " will not be added.");
+            }else {
+                mustClauseList.add(mustClauseChild);
+            }
+        }
 
         if(!ObjectUtils.isEmpty(processSearchCriteria.getAssignee())){
             String key = "assignee";
