@@ -205,6 +205,9 @@ public class InboxQueryBuilder implements QueryBuilderInterface {
 	private void addModuleSearchCriteriaToBaseQuery(Map<String, Object> params, Map<String, String> nameToPathMap,
 			Map<String, SearchParam.Operator> nameToOperator, List<Object> mustClauseList) {
 		params.keySet().forEach(key -> {
+			if (key.equals("fromDate") || key.equals("toDate")) {
+	            return;
+	        }
 			if (!(key.equals(SORT_ORDER_CONSTANT) || key.equals(SORT_BY_CONSTANT))) {
 
 				SearchParam.Operator operator = nameToOperator.get(key);
