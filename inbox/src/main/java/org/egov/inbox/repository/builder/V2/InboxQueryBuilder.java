@@ -77,15 +77,6 @@ public class InboxQueryBuilder implements QueryBuilderInterface {
 
         addModuleSearchCriteriaToBaseQuery(params, nameToPathMap, nameToOperator, mustClauseList);
         addProcessSearchCriteriaToBaseQuery(inboxRequest.getInbox().getProcessSearchCriteria(), nameToPathMap, nameToOperator, mustClauseList);
-        
-     // ================= TEMP HARD CODE CHECK FOR CHANGE =================
-        Map<String, Object> changeTermClause = new HashMap<>();
-        Map<String, Object> changeInnerTerm = new HashMap<>();
-        changeInnerTerm.put("Data.creationReason.keyword", "CHANGE");
-        changeTermClause.put("term", changeInnerTerm);
-
-        mustClauseList.add(changeTermClause);
-        // ===================================================================
 
         innerBoolClause.put(MUST_KEY, mustClauseList);
 
