@@ -71,7 +71,20 @@ public class InboxServiceV2 {
         hashParamsWhereverRequiredBasedOnConfiguration(inboxRequest.getInbox().getModuleSearchCriteria(), inboxQueryConfiguration);
         List<Inbox> items = getInboxItems(inboxRequest, inboxQueryConfiguration.getIndex());
         enrichProcessInstanceInInboxItems(items);
-      //  items.removeIf(item -> item.getProcessInstance() == null);
+        items.removeIf(item -> {
+            if (item.getProcessInstance() != null) {
+                return false;
+            }
+
+            Map<String, Object> bo = item.getBusinessObject();
+            if (bo == null) {
+                return true;
+            }
+
+            Object creationReason = bo.get("creationReason");
+            return creationReason == null 
+                    || !"CHANGE".equalsIgnoreCase(String.valueOf(creationReason));
+        });
         Integer totalCount = CollectionUtils.isEmpty(inboxRequest.getInbox().getProcessSearchCriteria().getStatus()) ? 0 : getTotalApplicationCount(inboxRequest, inboxQueryConfiguration.getIndex());
         List<HashMap<String, Object>> statusCountMap = CollectionUtils.isEmpty(inboxRequest.getInbox().getProcessSearchCriteria().getStatus()) ? new ArrayList<>() : getStatusCountMap(inboxRequest, inboxQueryConfiguration.getIndex());
         Integer nearingSlaCount = CollectionUtils.isEmpty(inboxRequest.getInbox().getProcessSearchCriteria().getStatus()) ? 0 : getApplicationsNearingSlaCount(inboxRequest, inboxQueryConfiguration.getIndex());
